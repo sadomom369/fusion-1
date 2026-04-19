@@ -1,0 +1,105 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Fusion;
+using Fusion.Sockets;
+using System;
+using UnityEngine.SceneManagement;
+using Unity.Mathematics;
+
+public class BasicSpawner : MonoBehaviour, INetworkRunnerCallbacks
+{
+    [SerializeField]
+    private NetworkRunner networkRunner = null;
+
+    [SerializeField]
+    private NetworkPrefabRef playerPrefab;
+
+    [SerializeField]
+    private GameMode gameMode;
+
+    private Dictionary<PlayerRef, NetworkObject> playerList = new Dictionary<PlayerRef, NetworkObject>();
+
+
+    private void Start()
+    {
+        StartGame(gameMode);
+    }
+
+    async void StartGame(GameMode mode)
+    {
+        networkRunner.ProvideInput = true;
+
+        var sceneInfo = new NetworkSceneInfo();
+        sceneInfo.AddSceneRef(SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex), LoadSceneMode.Single);
+
+        await networkRunner.StartGame(new StartGameArgs()
+        {
+            GameMode = mode,
+            SessionName = "Fusion Room",
+            Scene = sceneInfo,
+            SceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>()
+        });
+    }
+
+    // 基础连接回调
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    {
+        Vector3 spawposition = Vector3.up * 2;
+        NetworkObject NetworkPlayerObject = runner.Spawn(playerPrefab, spawposition, quaternion.identity, player);
+
+        playerList.Add(player, NetworkPlayerObject);
+    }
+
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    {
+        if (playerList.TryGetValue(player, out NetworkObject networkObject))
+        {
+            runner.Despawn(networkObject);
+            playerList.Remove(player);
+        }
+    }
+
+    public void OnInput(NetworkRunner runner, NetworkInput input)
+    {
+        var data = new NetworkInputData();
+        if (Input.GetKey(KeyCode.W))
+            data.movementInput += Vector3.forward;
+        if (Input.GetKey(KeyCode.S))
+            data.movementInput += Vector3.back;
+        if (Input.GetKey(KeyCode.A))
+            data.movementInput += Vector3.left;
+        if (Input.GetKey(KeyCode.D))
+            data.movementInput += Vector3.right;
+
+        data.buttons.Set(InputButtons.JUMP, Input.GetKey(KeyCode.Space));
+
+        input.Set(data);
+    }
+
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
+
+    // 连接状态回调
+    public void OnConnectedToServer(NetworkRunner runner) { }
+    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { } // 注意：有2个参数
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
+
+    // 会话与场景回调
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
+    public void OnSceneLoadDone(NetworkRunner runner) { }
+    public void OnSceneLoadStart(NetworkRunner runner) { } // 注意：方法名是OnSceneLoadStart
+
+    // 数据与认证回调
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+
+    // AOI (Area of Interest) 回调
+    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+
+    // 其他回调
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
+}
