@@ -1,0 +1,142 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Fusion;
+using Fusion.Sockets;
+using System;
+using UnityEngine.SceneManagement;
+using Unity.Mathematics;
+
+public class BasicSpawner : MonoBehaviour, INetworkRunnerCallbacks
+{
+    // 控制模式枚举
+    public enum ControlScheme
+    {
+        WASD,
+        ArrowKeys
+    }
+
+    [SerializeField]
+    private NetworkRunner networkRunner = null;
+
+    [SerializeField]
+    private NetworkPrefabRef playerPrefab;
+
+    private Dictionary<PlayerRef, NetworkObject> playerList = new Dictionary<PlayerRef, NetworkObject>();
+
+    // 当前客户端的控制模式
+    private ControlScheme currentScheme;
+    private bool isSchemeSelected = false;
+    private bool gameStarted = false;
+
+    private void Start()
+    {
+        // 等待玩家选择控制模式，不立即开始游戏
+        // 选择界面通过 OnGUI 显示
+    }
+
+    private void OnGUI()
+    {
+        // 如果还没选择模式且游戏尚未开始，显示选择面板
+        if (!isSchemeSelected && !gameStarted)
+        {
+            // 创建一个半透明背景面板
+            GUI.Box(new Rect(Screen.width / 2 - 150, Screen.height / 2 - 60, 300, 120), "选择控制模式");
+
+            if (GUI.Button(new Rect(Screen.width / 2 - 120, Screen.height / 2 - 20, 100, 40), "WASD"))
+            {
+                currentScheme = ControlScheme.WASD;
+                isSchemeSelected = true;
+                StartGame(GameMode.AutoHostOrClient);
+            }
+
+            if (GUI.Button(new Rect(Screen.width / 2 + 20, Screen.height / 2 - 20, 100, 40), "方向键"))
+            {
+                currentScheme = ControlScheme.ArrowKeys;
+                isSchemeSelected = true;
+                StartGame(GameMode.AutoHostOrClient);
+            }
+        }
+    }
+
+    async void StartGame(GameMode mode)
+    {
+        if (gameStarted) return;
+        gameStarted = true;
+
+        networkRunner.ProvideInput = true;
+
+        var sceneInfo = new NetworkSceneInfo();
+        sceneInfo.AddSceneRef(SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex), LoadSceneMode.Single);
+
+        await networkRunner.StartGame(new StartGameArgs()
+        {
+            GameMode = mode,
+            SessionName = "Fusion Room",
+            Scene = sceneInfo,
+            SceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>()
+        });
+    }
+
+    // 输入回调：根据选择的控制模式读取不同按键
+    public void OnInput(NetworkRunner runner, NetworkInput input)
+    {
+        var data = new NetworkInputData();
+        Vector3 move = Vector3.zero;
+
+        switch (currentScheme)
+        {
+            case ControlScheme.WASD:
+                if (Input.GetKey(KeyCode.W)) move += Vector3.forward;
+                if (Input.GetKey(KeyCode.S)) move += Vector3.back;
+                if (Input.GetKey(KeyCode.A)) move += Vector3.left;
+                if (Input.GetKey(KeyCode.D)) move += Vector3.right;
+                break;
+
+            case ControlScheme.ArrowKeys:
+                if (Input.GetKey(KeyCode.UpArrow)) move += Vector3.forward;
+                if (Input.GetKey(KeyCode.DownArrow)) move += Vector3.back;
+                if (Input.GetKey(KeyCode.LeftArrow)) move += Vector3.left;
+                if (Input.GetKey(KeyCode.RightArrow)) move += Vector3.right;
+                break;
+        }
+
+        data.movementInput = move;
+        data.buttons.Set(InputButtons.JUMP, Input.GetKey(KeyCode.Space));
+
+        input.Set(data);
+    }
+
+    // 其他回调保持不变（以下为必须实现但可为空的方法）
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    {
+        Vector3 spawnPosition = Vector3.up * 2;
+        NetworkObject networkPlayerObject = runner.Spawn(playerPrefab, spawnPosition, quaternion.identity, player);
+        playerList.Add(player, networkPlayerObject);
+    }
+
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    {
+        if (playerList.TryGetValue(player, out NetworkObject networkObject))
+        {
+            runner.Despawn(networkObject);
+            playerList.Remove(player);
+        }
+    }
+
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
+    public void OnConnectedToServer(NetworkRunner runner) { }
+    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { }
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
+    public void OnSceneLoadDone(NetworkRunner runner) { }
+    public void OnSceneLoadStart(NetworkRunner runner) { }
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
+}
